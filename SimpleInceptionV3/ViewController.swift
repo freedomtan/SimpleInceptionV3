@@ -103,7 +103,7 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
     }
     
     @IBAction func chooseImage(_ sender: Any) {
-         let picker = UIImagePickerController()
+        let picker = UIImagePickerController()
         picker.delegate = self
         picker.sourceType = .savedPhotosAlbum
         present(picker, animated: true)
