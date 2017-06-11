@@ -5,4 +5,4 @@ Note that the model is not included. Plese get it from [Apple](https://docs-asse
 
 See [Apple's machine learning site](https://developer.apple.com/machine-learning/) for more information
 
-For Objective C version, see [here](https://github.com/freedomtan/SimpleInceptionV3-ObjC/)
+For Objective-C version, see [here](https://github.com/freedomtan/SimpleInceptionV3-ObjC/)
