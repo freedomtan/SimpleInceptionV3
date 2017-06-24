@@ -7,14 +7,20 @@
 //
 
 import UIKit
+import AVFoundation
 import CoreML
 import Vision
 
-class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavigationControllerDelegate, UITableViewDelegate, UITableViewDataSource {
+class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavigationControllerDelegate, UITableViewDelegate, UITableViewDataSource, AVCaptureVideoDataOutputSampleBufferDelegate {
 
     @IBOutlet weak var imageView: UIImageView!
     @IBOutlet weak var messageLabel: UILabel!
     @IBOutlet weak var tableView: UITableView!
+    
+    var session: AVCaptureSession = AVCaptureSession()
+    var inputDevice: AVCaptureDevice!
+    var deviceInput: AVCaptureDeviceInput!
+    var previewLayer: AVCaptureVideoPreviewLayer!
     
     var numberOfResults: Int = 0
     var results: [VNClassificationObservation] = []
@@ -23,6 +29,7 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
         super.viewDidLoad()
         // Do any additional setup after loading the view, typically from a nib.
         self.tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+        self.setupCamera()
     }
 
     override func didReceiveMemoryWarning() {
@@ -80,7 +87,7 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
     
     @available(iOS 2.0, *)
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return numberOfResults;
+        return (numberOfResults > 5) ? 5 : numberOfResults
     }
     
     @available(iOS 2.0, *)
@@ -108,5 +115,55 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
         picker.sourceType = .savedPhotosAlbum
         present(picker, animated: true)
     }
+    
+    func setupCamera() {
+        session.sessionPreset = AVCaptureSession.Preset.photo
+        inputDevice = AVCaptureDevice.default(for: AVMediaType.video)!
+        
+        do {
+            try deviceInput = AVCaptureDeviceInput(device: inputDevice)
+            
+            if (session.canAddInput(deviceInput)) {
+                session.addInput(deviceInput)
+                
+                previewLayer = AVCaptureVideoPreviewLayer.init(session: session)
+                previewLayer.videoGravity = AVLayerVideoGravity.resizeAspectFill
+                
+                let rootLayer: CALayer = self.view.layer
+                rootLayer.masksToBounds = true
+                previewLayer.frame = self.view.frame
+                rootLayer.insertSublayer(previewLayer, at: 0)
+                
+                let videoDataOutput: AVCaptureVideoDataOutput = AVCaptureVideoDataOutput()
+                videoDataOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCMPixelFormat_32BGRA]
+                videoDataOutput.alwaysDiscardsLateVideoFrames = true
+                videoDataOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "VdieoDataOutputQueue"))
+                
+                if (session.canAddOutput(videoDataOutput)) {
+                    session.addOutput(videoDataOutput)
+                    videoDataOutput.connection(with: AVMediaType.video)?.isEnabled = true
+                    session.startRunning()
+                } else {
+                    print("Can't add videoDataOutput")
+                }
+            } else {
+                print("Can't add deviceINput")
+            }
+        } catch let error as NSError {
+            print("Error: \(error.domain)")
+        }
+    }
+    
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        // let startTicks = Date().timeIntervalSince1970
+        guard let cvImage: CVImageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {return}
+        let ciImage: CIImage = CIImage.init(cvImageBuffer: cvImage)
+        self.labelImage(image: ciImage)
+        /*
+        let stopTicks = Date().timeIntervalSince1970
+        print("time diff: ", (stopTicks - startTicks) * 1000)
+         */
+    }
+    
 }
 
