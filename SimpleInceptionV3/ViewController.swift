@@ -11,23 +11,52 @@ import AVFoundation
 import CoreML
 import Vision
 
+// Core ML MobileNet models could be converted from Keras models using script at https://github.com/freedomtan/coreml-mobilenet-models/.
+// E.g., to get MobileNet 0.5/160,
+//   > python mobilenets.py --alpha 0.50 --image_size 160
+
 class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavigationControllerDelegate, UITableViewDelegate, UITableViewDataSource, AVCaptureVideoDataOutputSampleBufferDelegate {
 
     @IBOutlet weak var imageView: UIImageView!
     @IBOutlet weak var messageLabel: UILabel!
+    @IBOutlet weak var fpsLabel: UILabel!
     @IBOutlet weak var tableView: UITableView!
     
     var session: AVCaptureSession = AVCaptureSession()
     var inputDevice: AVCaptureDevice!
     var deviceInput: AVCaptureDeviceInput!
     var previewLayer: AVCaptureVideoPreviewLayer!
-    
+
+    var model : VNCoreMLModel!
+    var request: VNCoreMLRequest!
     var numberOfResults: Int = 0
     var results: [VNClassificationObservation] = []
-    
+    var startTimes: [TimeInterval] = []
+
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view, typically from a nib.
+
+        model = try! VNCoreMLModel(for: MobileNet_050_160().model)
+        request = VNCoreMLRequest(model: model) { [weak self] request, error in
+            let stopTicks = Date().timeIntervalSince1970
+            let startTicks = self!.startTimes.remove(at: 0)
+
+            guard let results = request.results as? [VNClassificationObservation],
+                let topResult = results.first else {
+                    fatalError("unexpected result type from VNCoreMLRequest")
+            }
+            self?.results = results
+            self?.numberOfResults = results.count
+
+            // Update UI on main queue
+            DispatchQueue.main.async { [weak self] in
+                self?.messageLabel.text = "\(Int(topResult.confidence * 100))% it's  \(topResult.identifier)"
+                self?.fpsLabel.text = "\(round((1/(stopTicks - startTicks))*100)/100) fps"
+                self?.tableView.reloadData()
+            }
+        }
+
         self.tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         self.setupCamera()
     }
@@ -54,31 +83,12 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
     }
     
     func labelImage(image: CIImage) {
-        // Load the ML model through its generated class
-        guard let model = try? VNCoreMLModel(for: Inceptionv3().model) else {
-            fatalError("can't load the Inception V3 model")
-        }
-        
-        let request = VNCoreMLRequest(model: model) { [weak self] request, error in
-            guard let results = request.results as? [VNClassificationObservation],
-                let topResult = results.first else {
-                    fatalError("unexpected result type from VNCoreMLRequest")
-            }
-            self?.results = results
-            self?.numberOfResults = results.count
-            
-            // Update UI on main queue
-            DispatchQueue.main.async { [weak self] in
-                self?.messageLabel.text = "\(Int(topResult.confidence * 100))% it's  \(topResult.identifier)"
-                self?.tableView.reloadData()
-            }
-        }
-        
-        // Run the Core ML Inception V3 classifier on global dispatch queue
+        startTimes.append(Date().timeIntervalSince1970)
+        // Run the Core ML MobileNet V1 classifier on global dispatch queue
         let handler = VNImageRequestHandler(ciImage: image)
-        DispatchQueue.global(qos: .userInteractive).async {
+        DispatchQueue.global(qos: .userInteractive).sync {
             do {
-                try handler.perform([request])
+                try handler.perform([self.request])
             } catch {
                 print(error)
             }
@@ -155,15 +165,9 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
     }
     
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        // let startTicks = Date().timeIntervalSince1970
         guard let cvImage: CVImageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {return}
         let ciImage: CIImage = CIImage.init(cvImageBuffer: cvImage)
         self.labelImage(image: ciImage)
-        /*
-        let stopTicks = Date().timeIntervalSince1970
-        print("time diff: ", (stopTicks - startTicks) * 1000)
-         */
     }
-    
 }
 
